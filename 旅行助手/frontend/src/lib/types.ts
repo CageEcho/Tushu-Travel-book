@@ -110,3 +110,42 @@ export interface AppNavResponse {
   uris: string[];
   days: NavDay[];
 }
+
+// 推荐住宿：每天最后一站附近，经济 / 舒适 / 高端各一家，档次与评分来自百度地点检索（无价格）
+export interface Hotel {
+  tier: "budget" | "comfort" | "premium";
+  tier_label: string;
+  grade?: string | null;
+  name: string;
+  uid?: string | null;
+  address?: string | null;
+  rating: number;
+  comment_num: number;
+  distance_m: number;
+  lat: number;
+  lng: number;
+  link: NavLink;
+}
+
+export interface HotelDay {
+  day: number;
+  anchor: { name: string; lat: number; lng: number };
+  hotels: Hotel[];
+}
+
+export interface HotelsResponse {
+  trip_id: string;
+  days: HotelDay[];
+}
+
+// 地点实景图：百度百科词条首图，由后端下载缓存后提供；没找到可靠图片的地点不在 photos 里
+export interface PlacePhoto {
+  src: string;
+  title?: string | null;
+  source_url?: string | null;
+}
+
+export interface PhotosResponse {
+  trip_id: string;
+  photos: Record<string, PlacePhoto>;
+}

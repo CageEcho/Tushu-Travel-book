@@ -67,7 +67,7 @@ def run_parse(db, trip: Trip, task: Task) -> None:
     db.commit()
     objs: list[Place] = []
     for p in places:
-        poi, cands = geocode.geocode_place(p["name"], city)
+        preset = snapshot.DEMO_GEO.get(p["name"])
         place = Place(
             trip_id=trip.id,
             day=int(p["day"]),
@@ -75,17 +75,28 @@ def run_parse(db, trip: Trip, task: Task) -> None:
             name=p["name"],
             type=p.get("type", "景点"),
             confirmed=False,
-            candidates=cands or None,
+            candidates=None,
         )
-        if poi:
-            place.poi_name = poi.get("name")
-            place.poi_uid = poi.get("uid")
-            place.poi_address = poi.get("address")
-            place.lat = poi.get("lat")
-            place.lng = poi.get("lng")
+        if preset:
+            # demo 固定笔记：直接用预设坐标，不调百度接口（省配额、稳定）
+            place.poi_name = preset.get("poi_name") or p["name"]
+            place.poi_uid = preset.get("poi_uid")
+            place.poi_address = preset.get("poi_address")
+            place.lat = preset.get("lat")
+            place.lng = preset.get("lng")
             place.geocode_status = "ok"
         else:
-            place.geocode_status = "failed"
+            poi, cands = geocode.geocode_place(p["name"], city)
+            place.candidates = cands or None
+            if poi:
+                place.poi_name = poi.get("name")
+                place.poi_uid = poi.get("uid")
+                place.poi_address = poi.get("address")
+                place.lat = poi.get("lat")
+                place.lng = poi.get("lng")
+                place.geocode_status = "ok"
+            else:
+                place.geocode_status = "failed"
         objs.append(place)
     db.add_all(objs)
     trip.status = "awaiting_confirm"

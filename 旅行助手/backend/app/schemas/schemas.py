@@ -98,7 +98,7 @@ class NavLeg(BaseModel):
     via: list[str]
     uri: str  # baidumap:// 唤起 App，含途经点
     web_uri: str  # 网页版 map.baidu.com，含途经点（非官方格式）
-    web_basic_uri: str  # 网页版官方 URI，仅起终点（兜底）
+    web_basic_uri: str  # 网页版官方 URI，仅起终点（兑底）
 
 
 class NavLink(BaseModel):

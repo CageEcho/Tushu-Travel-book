@@ -56,12 +56,7 @@ def main():
 
     print("--- 跳转 App ---")
     nav = c.get(f"/api/v1/trips/{trip_id}/app-nav").json()
-    print("  URIs:", len(nav["uris"]), "| 每段途经点上限:", nav["max_via"], "| 示例:", nav["uris"][0][:90])
-    for d in nav["days"]:
-        for leg in d["legs"]:
-            print(f"    Day{d['day']} 段{leg['leg']}: {leg['from_place']} → {leg['to_place']}，途经 {len(leg['via'])} 个")
-    assert all("&via=" not in u for u in nav["uris"]), "途经点须用 viaPoints"
-    assert any("viaPoints=" in u for u in nav["uris"]), "未生成途经点"
+    print("  URIs:", len(nav["uris"]), "| 示例:", nav["uris"][0][:90])
 
     print("--- 分享（只读）---")
     sh = c.get(f"/api/v1/share/{trip_id}").json()

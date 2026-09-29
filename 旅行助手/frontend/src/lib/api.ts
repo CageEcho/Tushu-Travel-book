@@ -1,5 +1,7 @@
 import type {
   AppNavResponse,
+  HotelsResponse,
+  PhotosResponse,
   PlacesResponse,
   RouteResponse,
   Task,
@@ -49,6 +51,12 @@ export const api = {
 
   getAppNav: (tripId: string) =>
     request<AppNavResponse>(`/api/v1/trips/${tripId}/app-nav`),
+
+  getPhotos: (tripId: string) =>
+    request<PhotosResponse>(`/api/v1/trips/${tripId}/photos`),
+
+  getHotels: (tripId: string) =>
+    request<HotelsResponse>(`/api/v1/trips/${tripId}/hotels`),
 
   createExport: (tripId: string) =>
     request<{ trip_id: string; task_id: string }>(

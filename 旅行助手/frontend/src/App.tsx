@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, MapPin, Navigation, Share2, Sparkles } from "lucide-react";
+
 import { api } from "./lib/api";
-import type { AppNavResponse, NavLeg, NavLink, Place, RouteResponse } from "./lib/types";
-import PlaceCard from "./components/PlaceCard";
+import type { AppNavResponse, HotelsResponse, NavLeg, NavLink, Place, PlacePhoto, RouteResponse } from "./lib/types";
+import JourneyWorkspace from "./components/JourneyWorkspace";
 import RouteView from "./components/RouteView";
 import ScanModal from "./components/ScanModal";
 
 const DEMO_LINK = "https://xhslink.cn/o/10vTPLjLXy7";
-const BRAND = "#4FA83C";
+
 
 type Phase = "idle" | "loading" | "confirm" | "routing" | "route";
 
@@ -22,6 +22,9 @@ export default function App() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [route, setRoute] = useState<RouteResponse | null>(null);
   const [nav, setNav] = useState<AppNavResponse | null>(null);
+  const [hotels, setHotels] = useState<HotelsResponse | null>(null);
+  const [hotelsError, setHotelsError] = useState("");
+  const [photos, setPhotos] = useState<Record<string, PlacePhoto>>({});
   const [scanLeg, setScanLeg] = useState<NavLeg | null>(null);
   const [navHint, setNavHint] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -51,6 +54,23 @@ export default function App() {
     [stopTimer, stopExportTimer],
   );
 
+  // 实景图只是锦上添花：失败时不提示，卡片照常显示
+  const loadPhotos = useCallback((trip: string) => {
+    api
+      .getPhotos(trip)
+      .then((r) => setPhotos(r.photos))
+      .catch(() => {});
+  }, []);
+
+  const loadHotels = useCallback((trip: string) => {
+    setHotels(null);
+    setHotelsError("");
+    api
+      .getHotels(trip)
+      .then(setHotels)
+      .catch((e) => setHotelsError(e instanceof Error ? e.message : "推荐住宿加载失败"));
+  }, []);
+
   // 恢复入口：?trip=xxx 或 /share/xxx
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -68,10 +88,12 @@ export default function App() {
         setTitle(data.title ?? "");
         setPlaces(data.places);
         setPhase("confirm");
+        loadPhotos(trip);
         try {
           const r = await api.getRoute(trip);
           setRoute(r);
           setPhase("route");
+          loadHotels(trip);
           try {
             setNav(await api.getAppNav(trip));
           } catch {
@@ -85,7 +107,7 @@ export default function App() {
         setPhase("idle");
       }
     })();
-  }, []);
+  }, [loadHotels, loadPhotos]);
 
   const pollTask = useCallback(
     (taskId: string, onDone: () => void, failPhase: Phase) => {
@@ -114,11 +136,12 @@ export default function App() {
 
   const handleGenerate = async (src?: string) => {
     const value = (src ?? link).trim();
-    if (!value) return;
+    if (!value || phase === "loading" || phase === "routing") return;
     setError("");
     setProgress("提交中…");
     setPhase("loading");
     setPlaces([]);
+    setPhotos({});
     setRoute(null);
     try {
       const { trip_id, task_id } = await api.createTrip(value);
@@ -132,6 +155,7 @@ export default function App() {
           setTitle(data.title ?? "");
           setPlaces(data.places);
           setPhase("confirm");
+          loadPhotos(trip_id);
         },
         "idle",
       );
@@ -155,6 +179,7 @@ export default function App() {
           setRoute(r);
           setPhase("route");
           setNav(null);
+          loadHotels(tripId);
           api
             .getAppNav(tripId)
             .then(setNav)
@@ -260,183 +285,32 @@ export default function App() {
       await api.updatePlace(tripId, id, body);
       const data = await api.getPlaces(tripId);
       setPlaces(data.places);
+      loadPhotos(tripId); // 改名 / 换 POI 后重新匹配图片（未变的地点走缓存）
     } catch (e) {
       setError(e instanceof Error ? e.message : "更新失败");
     }
   };
 
-  const days = new Map<number, Place[]>();
-  for (const p of places) {
-    const arr = days.get(p.day) ?? [];
-    arr.push(p);
-    days.set(p.day, arr);
-  }
-  for (const arr of days.values()) arr.sort((a, b) => a.seq - b.seq);
-  const dayKeys = [...days.keys()].sort((a, b) => a - b);
-
   return (
-    <div className="min-h-screen bg-[#F7F7F7]">
-      <header className="sticky top-0 z-10 border-b border-[#EBEBEB] bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <span
-              className="flex h-8 w-8 items-center justify-center rounded-full font-bold text-white"
-              style={{ background: BRAND }}
-            >
-              T
-            </span>
-            <span className="text-lg font-bold tracking-tight">TripFlow</span>
-          </div>
-          <div className="text-sm text-[#717171]">旅行全流程助手</div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-4 pb-24 sm:px-6">
-        <section className="py-8 sm:py-12">
-          <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
-            把攻略变成
-            <span style={{ color: BRAND }}> 一张可走的动线</span>
-          </h1>
-          <p className="mt-2 text-sm text-[#717171] sm:text-base">
-            粘贴小红书攻略链接，自动识别景点、连成百度地图多途径点动线。
-          </p>
-
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <div className="flex flex-1 items-center rounded-2xl border border-[#DDDDDD] bg-white px-4 shadow-sm focus-within:border-[#4FA83C] focus-within:ring-2 focus-within:ring-[#4FA83C]/20">
-              <MapPin size={18} className="shrink-0 text-[#717171]" />
-              <input
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                placeholder="粘贴小红书攻略链接…"
-                className="w-full bg-transparent px-3 py-3.5 text-[15px] outline-none placeholder:text-[#B0B0B0]"
-              />
-            </div>
-            <button
-              onClick={() => handleGenerate()}
-              disabled={phase === "loading" || phase === "routing"}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl px-7 py-3.5 text-[15px] font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-              style={{ background: BRAND }}
-            >
-              {phase === "loading" ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <Sparkles size={18} />
-              )}
-              生成动线
-            </button>
-          </div>
-          <button
-            onClick={() => {
-              setLink(DEMO_LINK);
-              handleGenerate(DEMO_LINK);
-            }}
-            className="mt-3 text-sm font-medium underline-offset-4 hover:underline"
-            style={{ color: BRAND }}
-          >
-            试试这篇重庆攻略 →
-          </button>
-
-          {phase === "loading" && (
-            <div className="mt-6 flex items-center gap-2 text-sm text-[#717171]">
-              <Loader2 size={16} className="animate-spin" style={{ color: BRAND }} />
-              {progress || "处理中…"}
-            </div>
-          )}
-          {phase === "routing" && (
-            <div className="mt-6 flex items-center gap-2 text-sm text-[#717171]">
-              <Loader2 size={16} className="animate-spin" style={{ color: BRAND }} />
-              {progress || "路线编排中…"}
-            </div>
-          )}
-          {error && (
-            <div className="mt-6 rounded-xl bg-[#FEF2F2] px-4 py-3 text-sm text-[#DC2626]">
-              {error}
-            </div>
-          )}
-        </section>
-
-        {/* 地点确认 */}
-        {(phase === "confirm" || phase === "route") && places.length > 0 && (
-          <section>
-            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-xl font-bold">{title || "行程地点"}</h2>
-              <span className="text-sm text-[#717171]">
-                {city && `${city} · `}
-                共 {places.length} 个地点
-              </span>
-            </div>
-
-            {dayKeys.map((day) => (
-              <div key={day} className="mb-6">
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
-                    style={{ background: BRAND }}
-                  >
-                    Day {day}
-                  </span>
-                  <span className="text-sm text-[#717171]">
-                    {days.get(day)!.length} 个地点
-                  </span>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {days.get(day)!.map((p) => (
-                    <PlaceCard key={p.id} place={p} onUpdate={updatePlace} />
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {phase === "confirm" && (
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <button
-                  onClick={handleGenerateRoute}
-                  className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-[15px] font-semibold text-white transition hover:opacity-90"
-                  style={{ background: BRAND }}
-                >
-                  <Navigation size={18} />
-                  确认并生成动线
-                </button>
-                <button
-                  onClick={handleShare}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-[#DDDDDD] bg-white px-6 py-3 text-[15px] font-medium text-[#222] transition hover:border-[#B0B0B0]"
-                >
-                  <Share2 size={18} />
-                  分享
-                </button>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* 动线结果 */}
+    <>
+      <JourneyWorkspace
+        phase={phase} link={link} onLinkChange={setLink} tripId={tripId}
+        title={title} city={city} places={places} photos={photos} progress={progress} error={error}
+        onGenerate={() => handleGenerate()}
+        onDemo={() => { setLink(DEMO_LINK); document.getElementById("source-link")?.focus(); }}
+        onUpdate={updatePlace} onConfirm={handleGenerateRoute} onShare={handleShare}
+      >
         {phase === "route" && route && (
-          <section className="mt-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold">动线结果</h2>
-              <button
-                onClick={() => setPhase("confirm")}
-                className="text-sm font-medium underline-offset-4 hover:underline"
-                style={{ color: BRAND }}
-              >
-                调整地点
-              </button>
+          <section className="result-section">
+            <div className="result-heading"><h2>动线结果</h2>
+              <button onClick={() => setPhase("confirm")} className="quiet-button">调整地点</button>
             </div>
-            <RouteView
-              route={route}
-              nav={nav}
-              onAppNav={handleAppNav}
-              onSegmentNav={handleSegmentNav}
-              onShare={handleShare}
-              onExport={handleExport}
-              exporting={exporting}
-              exportProgress={exportProgress}
-            />
+            <RouteView route={route} nav={nav} onAppNav={handleAppNav}
+              onSegmentNav={handleSegmentNav} hotels={hotels} hotelsError={hotelsError} onShare={handleShare} onExport={handleExport}
+              exporting={exporting} exportProgress={exportProgress} />
           </section>
         )}
-      </main>
-
+      </JourneyWorkspace>
       {scanLeg && (
         <ScanModal
           url={`${window.location.origin}/share/${tripId}`}
@@ -454,6 +328,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

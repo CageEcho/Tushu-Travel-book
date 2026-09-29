@@ -13,8 +13,10 @@ from ..core.errors import AppError
 from ..models import Place, Task, Trip
 from ..schemas import AppNavOut, NavDay, NavLeg, NavSegment, PlaceUpdate, TripCreate
 from ..serializers import serialize_place, serialize_trip
+from ..services import hotels as hotels_svc
 from ..services import map as map_svc
 from ..services import nav as nav_svc
+from ..services import photos as photos_svc
 from ..services import pipeline, runner
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -145,6 +147,29 @@ def get_app_nav(trip_id: str, db: Session = Depends(get_db)):
             )
     uris = [leg.uri for d in days for leg in d.legs]
     return AppNavOut(max_via=max_via, uris=uris, days=days)
+
+
+@router.get("/{trip_id}/hotels")
+def get_hotels(trip_id: str, db: Session = Depends(get_db)):
+    """推荐住宿：每天最后一站附近按经济 / 舒适 / 高端各一家，数据来自百度地点检索。"""
+    trip = _trip_or_404(db, trip_id)
+    return hotels_svc.recommend(trip_id, trip.places)
+
+
+@router.get("/{trip_id}/photos")
+def get_photos(trip_id: str, db: Session = Depends(get_db)):
+    """地点实景图（百度百科词条首图）；没找到可靠图片的地点不返回。"""
+    trip = _trip_or_404(db, trip_id)
+    return {"trip_id": trip_id, "photos": photos_svc.photos_for_trip(trip_id, trip.places, trip.city)}
+
+
+@router.get("/{trip_id}/photos/{place_id}.jpg")
+def get_photo_file(trip_id: str, place_id: int, db: Session = Depends(get_db)):
+    _trip_or_404(db, trip_id)
+    path = photos_svc.photo_path(trip_id, place_id)
+    if not path.exists():
+        raise AppError("NO_PHOTO", "该地点暂无图片", status_code=404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.post("/{trip_id}/export")
