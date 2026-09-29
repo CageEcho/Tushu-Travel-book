@@ -1,0 +1,24 @@
+# 密钥（绝不提交）
+.env
+.env.local
+**/.env
+**/.env.local
+
+# 打包备份（含 .env，且超过 GitHub 单文件 100MB 上限）
+*.zip
+__MACOSX/
+
+# 依赖与构建产物
+**/.venv/
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/.pytest_cache/
+
+# 本地运行数据（行程数据库、生成的路线/长图）
+旅行助手/data/tripflow.db
+旅行助手/data/assets/
+
+# 系统文件
+.DS_Store
+**/.DS_Store

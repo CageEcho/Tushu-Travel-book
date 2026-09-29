@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TripFlow · 旅行全流程助手</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:#f5f6f8; color:#1f2329; line-height:1.6; }
+.wrap { max-width:820px; margin:0 auto; padding:24px 16px 80px; }
+h1 { font-size:24px; margin-bottom:4px; }
+.sub { color:#8a919f; font-size:14px; margin-bottom:20px; }
+.card { background:#fff; border-radius:14px; padding:20px; margin-bottom:16px; box-shadow:0 2px 10px rgba(0,0,0,.05); }
+label { font-size:13px; color:#4e5969; display:block; margin-bottom:6px; }
+input[type=text] { width:100%; padding:10px 12px; border:1px solid #d9dce1; border-radius:8px; font-size:15px; }
+button { background:#3d6bff; color:#fff; border:none; border-radius:8px; padding:10px 18px; font-size:15px; cursor:pointer; }
+button:hover { background:#2f58e0; }
+button.ghost { background:#eef1ff; color:#3d6bff; }
+button:disabled { background:#c4cbd6; cursor:not-allowed; }
+.row { display:flex; gap:10px; }
+.row button { flex-shrink:0; }
+.hint { font-size:12px; color:#8a919f; margin-top:8px; }
+.progress { margin-top:12px; font-size:14px; color:#3d6bff; }
+.error { color:#d54941; font-size:14px; margin-top:8px; }
+.places .ph { padding:10px; border:1px solid #eef0f3; border-radius:10px; margin-bottom:10px; background:#fafbfc; }
+.ph .top { display:flex; align-items:center; gap:8px; }
+.ph .name { font-weight:600; font-size:15px; }
+.ph .badge { font-size:11px; padding:2px 8px; border-radius:10px; background:#eef1ff; color:#3d6bff; }
+.ph .badge.warn { background:#fff3e8; color:#e8872a; }
+.ph .addr { font-size:12px; color:#8a919f; margin-top:2px; }
+.ph .ops { margin-top:8px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.ph select, .ph input[type=checkbox] { font-size:13px; }
+.mapimg { width:100%; border-radius:10px; margin-top:10px; }
+.seg { display:flex; justify-content:space-between; font-size:13px; padding:6px 0; border-bottom:1px dashed #e5e6eb; }
+.day-title { font-size:17px; font-weight:700; margin:16px 0 6px; }
+a { color:#3d6bff; }
+.ph .top { flex-wrap:wrap; }
+.seg { flex-wrap:wrap; gap:2px 8px; }
+@media (max-width: 520px) {
+  .wrap { padding:16px 12px 60px; }
+  .row { flex-wrap:wrap; }
+  .row button { width:100%; }
+  .ph .ops label { width:100%; }
+  .ph .ops input[type=text], .ph .ops select { width:100%; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧭 TripFlow 旅行全流程助手</h1>
+  <div class="sub">粘贴小红书攻略链接 → 自动生成百度地图多途径点动线（比赛 demo）</div>
+
+  <div class="card">
+    <label>小红书笔记链接</label>
+    <div class="row">
+      <input type="text" id="link" placeholder="粘贴链接，或用下面的 demo 链接">
+      <button id="btnGo">生成</button>
+    </div>
+    <div class="hint">演示链接：<a href="#" id="demoLink">https://xhslink.cn/o/10vTPLjLXy7（重庆特种兵2日游）</a></div>
+    <div class="progress" id="progress"></div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <div class="card" id="placesCard" style="display:none">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <div style="font-weight:700">地点确认（确认前不会生成动线）</div>
+      <div class="hint" style="margin:0" id="tripMeta"></div>
+    </div>
+    <div class="places" id="places"></div>
+    <div class="row">
+      <button id="btnRoute">生成动线</button>
+      <button class="ghost" id="btnShare">复制分享链接</button>
+    </div>
+  </div>
+
+  <div class="card" id="routeCard" style="display:none">
+    <div style="font-weight:700">动线结果</div>
+    <div id="route"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnNav">跳转百度地图 App</button>
+      <button class="ghost" id="btnExport">导出长图</button>
+    </div>
+    <div class="progress" id="exportProgress"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const demo = 'https://xhslink.cn/o/10vTPLjLXy7';
+let tripId = null;
+
+$('demoLink').onclick = e => { e.preventDefault(); $('link').value = demo; };
+
+async function api(method, path, body) {
+  const r = await fetch(path, {
+    method, headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(data?.error?.message || ('HTTP '+r.status));
+  return data;
+}
+
+function poll(taskId, onDone) {
+  const timer = setInterval(async () => {
+    try {
+      const t = await api('GET', '/api/v1/tasks/'+taskId);
+      $('progress').textContent = '进度：' + (t.progress || '');
+      if (t.status === 'done') { clearInterval(timer); onDone(); }
+      else if (t.status === 'failed') { clearInterval(timer); $('error').textContent = '失败：' + t.error; }
+    } catch(e) { clearInterval(timer); $('error').textContent = e.message; }
+  }, 1200);
+}
+
+$('btnGo').onclick = async () => {
+  const link = $('link').value.trim();
+  if (!link) return;
+  $('error').textContent = ''; $('progress').textContent = '提交中…';
+  try {
+    const res = await api('POST', '/api/v1/trips', { source_link: link });
+    tripId = res.trip_id;
+    poll(res.task_id, loadPlaces);
+  } catch(e) { $('error').textContent = e.message; $('progress').textContent = ''; }
+};
+
+async function loadPlaces() {
+  const data = await api('GET', '/api/v1/trips/'+tripId+'/places');
+  $('tripMeta').textContent = '城市：'+(data.city||'-')+'　状态：'+data.status;
+  $('placesCard').style.display = 'block';
+  renderPlaces(data.places);
+}
+
+function renderPlaces(places) {
+  const box = $('places');
+  box.innerHTML = '';
+  for (const p of places) {
+    const div = document.createElement('div');
+    div.className = 'ph';
+    const ok = p.geocode_status === 'ok';
+    const candOpts = (p.candidates||[]).map(c =>
+      `<option value="${c.uid||''}" data-name="${c.name||''}" data-addr="${c.address||''}" data-lat="${c.lat||''}" data-lng="${c.lng||''}">${c.name||''}${c.address?' · '+c.address:''}</option>`
+    ).join('');
+    div.innerHTML = `
+      <div class="top">
+        <span class="name">${esc(p.name)}</span>
+        <span class="badge ${ok?'':'warn'}">${ok?'已定位':'待处理'}</span>
+        <span class="badge">Day ${p.day} · 第${p.seq}位</span>
+        ${p.skipped?'<span class="badge warn">已跳过</span>':''}
+      </div>
+      <div class="addr">${esc(p.poi_name||'')} ${esc(p.poi_address||'')}</div>
+      <div class="ops">
+        <label style="margin:0">改名<input type="text" value="${esc(p.name)}" data-k="name" data-id="${p.id}" style="width:120px"></label>
+        <label style="margin:0">天<select data-k="day" data-id="${p.id}">
+          <option value="1" ${p.day===1?'selected':''}>1</option>
+          <option value="2" ${p.day===2?'selected':''}>2</option>
+        </select></label>
+        <label style="margin:0">换POI<select data-k="poi" data-id="${p.id}">
+          <option value="">${ok?'保持当前':(candOpts?'-- 请选择 --':'无候选')}</option>
+          ${candOpts}
+        </select></label>
+        <label style="margin:0"><input type="checkbox" data-k="skipped" data-id="${p.id}" ${p.skipped?'checked':''}> 跳过</label>
+      </div>`;
+    box.appendChild(div);
+  }
+  box.querySelectorAll('[data-k]').forEach(el => {
+    el.addEventListener('change', async () => {
+      const id = el.dataset.id, k = el.dataset.k;
+      const body = {};
+      if (k === 'name') body.name = el.value.trim();
+      if (k === 'day') body.day = parseInt(el.value, 10);
+      if (k === 'skipped') body.skipped = el.checked;
+      if (k === 'poi') {
+        const opt = el.selectedOptions[0];
+        if (opt.value) {
+          body.poi_uid = opt.value; body.poi_name = opt.dataset.name;
+          body.poi_address = opt.dataset.addr;
+          body.lat = parseFloat(opt.dataset.lat); body.lng = parseFloat(opt.dataset.lng);
+        }
+      }
+      await api('PATCH', '/api/v1/trips/'+tripId+'/places/'+id, body);
+      renderPlaces((await api('GET','/api/v1/trips/'+tripId+'/places')).places);
+    });
+  });
+}
+
+$('btnRoute').onclick = async () => {
+  $('error').textContent = '';
+  try {
+    const res = await api('POST', '/api/v1/trips/'+tripId+'/route');
+    $('progress').textContent = '路线编排中…';
+    poll(res.task_id, loadRoute);
+  } catch(e) { $('error').textContent = e.message; }
+};
+
+async function loadRoute() {
+  const data = await api('GET', '/api/v1/trips/'+tripId+'/route');
+  $('routeCard').style.display = 'block';
+  const box = $('route'); box.innerHTML = '';
+  for (const d of data.days) {
+    const sec = document.createElement('div');
+    sec.innerHTML = `<div class="day-title">Day ${d.day}</div>
+      <img class="mapimg" src="${d.map_url}" alt="动线地图">`;
+    const segs = d.segments.map(s => `<div class="seg"><span>${esc(s.from_place)} → ${esc(s.to_place)}</span><span>${esc(s.mode)} · ${esc(s.duration_text)}</span></div>`).join('');
+    sec.innerHTML += segs;
+    box.appendChild(sec);
+  }
+}
+
+$('btnNav').onclick = async () => {
+  const res = await api('GET', '/api/v1/trips/'+tripId+'/app-nav');
+  if (!res.uris || !res.uris.length) { $('error').textContent = '无可用导航'; return; }
+  res.uris.forEach(u => window.open(u));
+};
+
+$('btnShare').onclick = async () => {
+  await navigator.clipboard.writeText(location.origin + '/share/' + tripId);
+  $('error').textContent = ''; alert('分享链接已复制（本机访问 /share/' + tripId + '）');
+};
+
+$('btnExport').onclick = async () => {
+  $('exportProgress').textContent = '';
+  try {
+    const res = await api('POST', '/api/v1/trips/'+tripId+'/export');
+    const timer = setInterval(async () => {
+      const t = await api('GET', '/api/v1/tasks/'+res.task_id);
+      $('exportProgress').textContent = '导出中：' + (t.progress || '');
+      if (t.status === 'done') { clearInterval(timer); window.open('/api/v1/trips/'+tripId+'/export.png'); $('exportProgress').textContent = '导出完成'; }
+      else if (t.status === 'failed') { clearInterval(timer); $('exportProgress').textContent = '导出失败：' + t.error; }
+    }, 1500);
+  } catch(e) { $('exportProgress').textContent = e.message; }
+};
+
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+</script>
+</body>
+</html>

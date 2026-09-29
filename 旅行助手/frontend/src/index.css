@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+:root {
+  --brand: #4fa83c;
+  --ink: #222222;
+  --muted: #717171;
+  --line: #dddddd;
+  --bg-soft: #f7f7f7;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}

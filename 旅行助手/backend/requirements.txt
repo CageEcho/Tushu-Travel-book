@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic>=2
+python-dotenv
+httpx
+openai
+requests
+pytest
+Pillow
+playwright
